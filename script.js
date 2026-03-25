@@ -1,6 +1,6 @@
 /* ===================================================
-   NEON TETRIS - script.js
-   爽快連鎖型テトリス with ランキング / mobile support
+   NEON TETRIS - script.js  v2 (Chain Animation)
+   フェーズ制連鎖アニメーション対応版
    =================================================== */
 
 // ─────────────────────────────────────────────────────
@@ -9,7 +9,6 @@
 const COLS = 10;
 const ROWS = 20;
 const CELL = (() => {
-  // Responsive cell size
   const maxH = window.innerHeight - 180;
   const maxW = window.innerWidth - 280;
   const byH = Math.floor(maxH / ROWS);
@@ -53,42 +52,55 @@ const PIECES = [
   [[0,0,7],[7,7,7],[0,0,0]],                   // J
 ];
 
-// Speed: ms per drop (level 1→10+)
-const SPEEDS = [800,680,560,450,360,270,200,150,110,80,60];
-
+const SPEEDS      = [800,680,560,450,360,270,200,150,110,80,60];
 const SCORE_TABLE = {1:100, 2:300, 3:700, 4:1500};
 const COMBO_BONUS = [0,50,100,200,400,700,1100];
 
 // ─────────────────────────────────────────────────────
+//  PHASE CONSTANTS
+// ─────────────────────────────────────────────────────
+const PHASE = {
+  PLAY:       'PLAY',
+  LINE_FLASH: 'LINE_FLASH',
+  DROP_ANIM:  'DROP_ANIM',
+  CHECK:      'CHECK',
+};
+
+const FLASH_DURATION  = 420;  // ms
+const DROP_DURATION   = 300;  // ms
+const FLASH_INTERVAL  = 80;   // ms ごとに点滅トグル
+
+// ─────────────────────────────────────────────────────
 //  DOM REFS
 // ─────────────────────────────────────────────────────
-const bgCanvas    = document.getElementById('bgCanvas');
-const bgCtx       = bgCanvas.getContext('2d');
-const gameCanvas  = document.getElementById('gameCanvas');
-const ctx         = gameCanvas.getContext('2d');
-const nextCanvas  = document.getElementById('nextCanvas');
-const nextCtx     = nextCanvas.getContext('2d');
-const holdCanvas  = document.getElementById('holdCanvas');
-const holdCtx     = holdCanvas.getContext('2d');
+const bgCanvas   = document.getElementById('bgCanvas');
+const bgCtx      = bgCanvas.getContext('2d');
+const gameCanvas = document.getElementById('gameCanvas');
+const ctx        = gameCanvas.getContext('2d');
+const nextCanvas = document.getElementById('nextCanvas');
+const nextCtx    = nextCanvas.getContext('2d');
+const holdCanvas = document.getElementById('holdCanvas');
+const holdCtx    = holdCanvas.getContext('2d');
 
-const scoreEl   = document.getElementById('score');
-const levelEl   = document.getElementById('level');
-const linesEl   = document.getElementById('lines');
-const comboEl   = document.getElementById('combo');
-const speedBar  = document.getElementById('speedBar');
-const popText   = document.getElementById('popText');
-const flashEl   = document.getElementById('flashEl');
-const overlay   = document.getElementById('overlay');
+const scoreEl     = document.getElementById('score');
+const levelEl     = document.getElementById('level');
+const linesEl     = document.getElementById('lines');
+const comboEl     = document.getElementById('combo');
+const speedBar    = document.getElementById('speedBar');
+const popText     = document.getElementById('popText');
+const flashEl     = document.getElementById('flashEl');
+const overlay     = document.getElementById('overlay');
 const overlayText = document.getElementById('overlayText');
 
-// Screens
-const startScreen   = document.getElementById('startScreen');
-const gameScreen    = document.getElementById('gameScreen');
-const pauseScreen   = document.getElementById('pauseScreen');
-const gameoverScreen= document.getElementById('gameoverScreen');
-const rankingScreen = document.getElementById('rankingScreen');
+const startScreen    = document.getElementById('startScreen');
+const gameScreen     = document.getElementById('gameScreen');
+const pauseScreen    = document.getElementById('pauseScreen');
+const gameoverScreen = document.getElementById('gameoverScreen');
+const rankingScreen  = document.getElementById('rankingScreen');
 
-// Buttons
+// ─────────────────────────────────────────────────────
+//  BUTTON EVENTS
+// ─────────────────────────────────────────────────────
 document.getElementById('startBtn').addEventListener('click', startGame);
 document.getElementById('rankingBtnStart').addEventListener('click', showRanking);
 document.getElementById('pauseBtn').addEventListener('click', togglePause);
@@ -98,33 +110,38 @@ document.getElementById('saveScoreBtn').addEventListener('click', saveScore);
 document.getElementById('retryBtn').addEventListener('click', startGame);
 document.getElementById('backBtn').addEventListener('click', () => showScreen(startScreen));
 
-// Mobile controls
-document.getElementById('leftBtn').addEventListener('click', () => move(-1));
-document.getElementById('rightBtn').addEventListener('click', () => move(1));
-document.getElementById('downBtn').addEventListener('click', () => softDrop());
+document.getElementById('leftBtn').addEventListener('click',   () => move(-1));
+document.getElementById('rightBtn').addEventListener('click',  () => move(1));
+document.getElementById('downBtn').addEventListener('click',   () => softDrop());
 document.getElementById('rotateBtn').addEventListener('click', () => rotate(1));
-document.getElementById('dropBtn').addEventListener('click', () => hardDrop());
-document.getElementById('holdBtn').addEventListener('click', () => holdPiece());
+document.getElementById('dropBtn').addEventListener('click',   () => hardDrop());
+document.getElementById('holdBtn').addEventListener('click',   () => holdPiece());
 
 // ─────────────────────────────────────────────────────
 //  GAME STATE
 // ─────────────────────────────────────────────────────
-let board, current, next, hold, canHold;
+let board, current, nextIdx, hold, canHold;
 let score, level, lines, combo;
 let isRunning, isPaused, gameOver;
 let lastTime, dropCounter, dropInterval;
 let rafId;
 let flashTimeout;
 
-// Particle system for board
-let particles = [];
+let phase          = PHASE.PLAY;
+let phaseTimer     = 0;
+let flashingRows   = [];
+let flashOn        = true;
+let flashToggleTimer = 0;
+let animCells      = [];   // {x, colorIdx, fromY, toY, curY}
+let animProgress   = 0;
+let particles      = [];
 
 // ─────────────────────────────────────────────────────
-//  BACKGROUND STAR ANIMATION
+//  BACKGROUND STARS
 // ─────────────────────────────────────────────────────
 const stars = [];
 function initBg() {
-  bgCanvas.width = window.innerWidth;
+  bgCanvas.width  = window.innerWidth;
   bgCanvas.height = window.innerHeight;
   stars.length = 0;
   for (let i = 0; i < 120; i++) {
@@ -151,14 +168,13 @@ function animateBg() {
   }
   requestAnimationFrame(animateBg);
 }
-initBg();
-animateBg();
+initBg(); animateBg();
 window.addEventListener('resize', initBg);
 
 // ─────────────────────────────────────────────────────
-//  BOARD PARTICLES
+//  PARTICLES
 // ─────────────────────────────────────────────────────
-function spawnParticles(row, colorIdx, count = 20) {
+function spawnParticles(row, colorIdx, count = 24) {
   const color = COLORS[colorIdx] || '#00e5ff';
   for (let i = 0; i < count; i++) {
     particles.push({
@@ -167,7 +183,7 @@ function spawnParticles(row, colorIdx, count = 20) {
       vx: (Math.random() - 0.5) * 6,
       vy: (Math.random() - 1.5) * 5,
       life: 1,
-      decay: Math.random() * 0.04 + 0.025,
+      decay: Math.random() * 0.035 + 0.02,
       r: Math.random() * 3 + 1,
       color,
     });
@@ -176,10 +192,7 @@ function spawnParticles(row, colorIdx, count = 20) {
 function updateParticles() {
   particles = particles.filter(p => p.life > 0);
   for (const p of particles) {
-    p.x += p.vx;
-    p.y += p.vy;
-    p.vy += 0.18; // gravity
-    p.life -= p.decay;
+    p.x += p.vx; p.y += p.vy; p.vy += 0.18; p.life -= p.decay;
   }
 }
 function drawParticles() {
@@ -197,7 +210,7 @@ function drawParticles() {
 }
 
 // ─────────────────────────────────────────────────────
-//  SCREEN MANAGEMENT
+//  SCREEN
 // ─────────────────────────────────────────────────────
 function showScreen(screen) {
   [startScreen, gameScreen, pauseScreen, gameoverScreen, rankingScreen]
@@ -219,62 +232,56 @@ function makePiece(idx) {
   };
 }
 
-function rotateMatrix(m, dir = 1) {
+function rotateMatrix(m) {
   const n = m.length;
-  const out = m.map(r => [...r]);
-  for (let y = 0; y < n; y++)
-    for (let x = 0; x < n; x++)
-      out[x][n - 1 - y] = m[y][x];
-  return dir === 1 ? out : rotateMatrix(rotateMatrix(m, 1), 1).map(r => [...r]); // 2x for CCW
+  return m[0].map((_, x) => m.map((_, y) => m[n - 1 - y][x]));
 }
 
-function collision(piece, board, ox = 0, oy = 0) {
+function collision(piece, brd, ox = 0, oy = 0) {
   for (let y = 0; y < piece.matrix.length; y++)
     for (let x = 0; x < piece.matrix[y].length; x++) {
       if (!piece.matrix[y][x]) continue;
       const nx = piece.x + x + ox;
       const ny = piece.y + y + oy;
       if (nx < 0 || nx >= COLS || ny >= ROWS) return true;
-      if (ny >= 0 && board[ny][nx]) return true;
+      if (ny >= 0 && brd[ny][nx]) return true;
     }
   return false;
 }
 
-// Wall kick offsets (SRS-lite)
 const KICKS = [[0,0],[-1,0],[1,0],[0,-1],[-1,-1],[1,-1]];
 
 function rotate(dir = 1) {
-  if (!current || isPaused || gameOver) return;
-  const orig = current.matrix;
-  let mat = orig;
+  if (!current || isPaused || gameOver || phase !== PHASE.PLAY) return;
   const times = dir === 1 ? 1 : 3;
-  for (let i = 0; i < times; i++) mat = rotateMatrix(mat, 1);
+  let mat = current.matrix;
+  for (let i = 0; i < times; i++) mat = rotateMatrix(mat);
   const prev = current.matrix;
   current.matrix = mat;
   for (const [kx, ky] of KICKS) {
     current.x += kx; current.y += ky;
-    if (!collision(current, board)) return; // success
+    if (!collision(current, board)) return;
     current.x -= kx; current.y -= ky;
   }
-  current.matrix = prev; // revert
+  current.matrix = prev;
 }
 
 // ─────────────────────────────────────────────────────
-//  GRAVITY / MOVEMENT
+//  MOVEMENT
 // ─────────────────────────────────────────────────────
 function move(dx) {
-  if (!current || isPaused || gameOver) return;
+  if (!current || isPaused || gameOver || phase !== PHASE.PLAY) return;
   if (!collision(current, board, dx, 0)) current.x += dx;
 }
 
 function softDrop() {
-  if (!current || isPaused || gameOver) return;
+  if (!current || isPaused || gameOver || phase !== PHASE.PLAY) return;
   if (!collision(current, board, 0, 1)) { current.y++; score += 1; updateHUD(); }
   else lock();
 }
 
 function hardDrop() {
-  if (!current || isPaused || gameOver) return;
+  if (!current || isPaused || gameOver || phase !== PHASE.PLAY) return;
   let dropped = 0;
   while (!collision(current, board, 0, 1)) { current.y++; dropped++; }
   score += dropped * 2;
@@ -283,24 +290,18 @@ function hardDrop() {
 }
 
 function holdPiece() {
-  if (!canHold || !current || isPaused || gameOver) return;
+  if (!canHold || !current || isPaused || gameOver || phase !== PHASE.PLAY) return;
   canHold = false;
   const savedIdx = current.colorIdx;
-  if (hold) {
-    current = makePiece(hold);
-    hold = savedIdx;
-  } else {
-    hold = savedIdx;
-    spawnNext();
-  }
+  if (hold) { current = makePiece(hold); hold = savedIdx; }
+  else { hold = savedIdx; spawnNext(); }
   drawMini(holdCtx, hold);
 }
 
 // ─────────────────────────────────────────────────────
-//  LOCK & LINE CLEAR (CHAIN SYSTEM)
+//  LOCK
 // ─────────────────────────────────────────────────────
 function lock() {
-  // Place piece on board
   for (let y = 0; y < current.matrix.length; y++)
     for (let x = 0; x < current.matrix[y].length; x++) {
       if (!current.matrix[y][x]) continue;
@@ -308,197 +309,300 @@ function lock() {
       if (ny < 0) { triggerGameOver(); return; }
       board[ny][current.x + x] = current.matrix[y][x];
     }
-
-  clearLines();
-  spawnNext();
-  canHold = true;
+  current = null;
+  checkAndStartFlash();
 }
 
-function clearLines() {
-  let cleared = [];
-  for (let y = ROWS - 1; y >= 0; y--) {
-    if (board[y].every(v => v !== 0)) cleared.push(y);
+// ─────────────────────────────────────────────────────
+//  CHECK → FLASH PHASE
+// ─────────────────────────────────────────────────────
+function checkAndStartFlash() {
+  flashingRows = [];
+  for (let y = 0; y < ROWS; y++) {
+    if (board[y].every(v => v !== 0)) flashingRows.push(y);
   }
-  if (cleared.length === 0) {
-    combo = 0;
-    comboEl.textContent = combo;
+  if (flashingRows.length === 0) {
+    phase = PHASE.PLAY;
+    spawnNext();
+    canHold = true;
     return;
   }
+  phase            = PHASE.LINE_FLASH;
+  phaseTimer       = 0;
+  flashOn          = true;
+  flashToggleTimer = 0;
+}
 
-  // Flash effect
-  doFlash(cleared.length);
+// ─────────────────────────────────────────────────────
+//  FLASH PHASE UPDATE
+// ─────────────────────────────────────────────────────
+function updateFlash(dt) {
+  phaseTimer       += dt;
+  flashToggleTimer += dt;
+  if (flashToggleTimer >= FLASH_INTERVAL) {
+    flashToggleTimer -= FLASH_INTERVAL;
+    flashOn = !flashOn;
+  }
+  if (phaseTimer >= FLASH_DURATION) {
+    commitLinesClear();
+  }
+}
 
-  // Spawn particles for each cleared row
-  cleared.forEach(row => {
+// ─────────────────────────────────────────────────────
+//  COMMIT CLEAR → BUILD ANIM
+// ─────────────────────────────────────────────────────
+function commitLinesClear() {
+  const cleared = flashingRows.length;
+
+  // パーティクル
+  flashingRows.forEach(row => {
     const sample = board[row].find(v => v !== 0) || 1;
-    spawnParticles(row, sample, 30);
+    spawnParticles(row, sample, 28);
   });
 
-  // Remove cleared rows
-  for (const row of cleared) {
-    board.splice(row, 1);
-    board.unshift(new Array(COLS).fill(0));
-  }
+  doFlash(cleared);
 
-  // ★ GRAVITY CHAIN: after lines are removed, let floating columns fall
-  applyGravity();
-
-  // Scoring
+  // スコア
   combo++;
-  const base = SCORE_TABLE[cleared.length] || 1500;
+  const base       = SCORE_TABLE[cleared] || 1500;
   const comboBonus = COMBO_BONUS[Math.min(combo, COMBO_BONUS.length - 1)];
-  const gain = (base + comboBonus) * level;
-  score += gain;
-  lines += cleared.length;
-  level = Math.min(10, Math.floor(lines / 10) + 1);
+  score  += (base + comboBonus) * level;
+  lines  += cleared;
+  level   = Math.min(10, Math.floor(lines / 10) + 1);
   dropInterval = SPEEDS[level - 1];
-
   comboEl.textContent = combo;
   updateHUD();
   updateSpeedBar();
 
-  // Pop text
   let msg = '';
-  if (cleared.length === 4) msg = 'TETRIS!!';
-  else if (cleared.length === 3) msg = 'TRIPLE!';
-  else if (cleared.length === 2) msg = 'DOUBLE!';
+  if (cleared === 4) msg = 'TETRIS!!';
+  else if (cleared === 3) msg = 'TRIPLE!';
+  else if (cleared === 2) msg = 'DOUBLE!';
   if (combo > 1) msg = `COMBO ×${combo}` + (msg ? `\n${msg}` : '');
   if (msg) showPop(msg);
+
+  // ── アニメデータ構築 ──────────────────────────────
+  // 消去後のボードを計算
+  const flashSet = new Set(flashingRows);
+  const newBoard  = board.filter((_, i) => !flashSet.has(i));
+  while (newBoard.length < ROWS) newBoard.unshift(new Array(COLS).fill(0));
+
+  // 各セルの落下量 = そのセルより下にある消去行の数
+  animCells = [];
+  for (let y = 0; y < ROWS; y++) {
+    if (flashSet.has(y)) continue;
+    for (let x = 0; x < COLS; x++) {
+      const colorIdx = board[y][x];
+      if (!colorIdx) continue;
+      const fallenBy = [...flashingRows].filter(r => r > y).length;
+      if (fallenBy === 0) continue;   // 落下しないセルはアニメ不要
+      animCells.push({ x, colorIdx, fromY: y, toY: y + fallenBy, curY: y });
+    }
+  }
+
+  board = newBoard;
+
+  phase         = PHASE.DROP_ANIM;
+  phaseTimer    = 0;
+  animProgress  = 0;
 }
 
-// ★ Core chain mechanic: any "floating" blocks fall to fill gaps
-function applyGravity() {
-  // Work column by column
-  for (let x = 0; x < COLS; x++) {
-    let writeY = ROWS - 1;
-    for (let y = ROWS - 1; y >= 0; y--) {
-      if (board[y][x] !== 0) {
-        board[writeY][x] = board[y][x];
-        if (writeY !== y) board[y][x] = 0;
-        writeY--;
-      }
-    }
-    // Clear remaining top cells
-    for (let y = writeY; y >= 0; y--) board[y][x] = 0;
+// ─────────────────────────────────────────────────────
+//  DROP ANIM UPDATE
+// ─────────────────────────────────────────────────────
+function easeOutBounce(t) {
+  const n1 = 7.5625, d1 = 2.75;
+  if (t < 1/d1)       return n1*t*t;
+  if (t < 2/d1)       { t -= 1.5/d1;  return n1*t*t + 0.75; }
+  if (t < 2.5/d1)     { t -= 2.25/d1; return n1*t*t + 0.9375; }
+                        t -= 2.625/d1; return n1*t*t + 0.984375;
+}
+function easeOutQuad(t) { return 1 - (1-t)*(1-t); }
+
+function updateDropAnim(dt) {
+  phaseTimer   += dt;
+  animProgress  = Math.min(1, phaseTimer / DROP_DURATION);
+  const t       = easeOutBounce(animProgress);
+
+  for (const cell of animCells) {
+    cell.curY = cell.fromY + (cell.toY - cell.fromY) * t;
+  }
+
+  if (animProgress >= 1) {
+    animCells = [];
+    phase     = PHASE.CHECK;
+    phaseTimer = 0;
   }
 }
 
 // ─────────────────────────────────────────────────────
-//  NEXT / SPAWN
+//  CHECK PHASE
 // ─────────────────────────────────────────────────────
-let nextIdx;
-function spawnNext() {
-  if (nextIdx === undefined) nextIdx = randomPieceIdx();
-  current = makePiece(nextIdx);
-  nextIdx = randomPieceIdx();
-  drawMini(nextCtx, nextIdx);
-  if (collision(current, board)) { triggerGameOver(); }
-}
-
-function drawMini(ctx2, idx) {
-  const cw = ctx2.canvas.width;
-  const ch = ctx2.canvas.height;
-  ctx2.clearRect(0, 0, cw, ch);
-  if (!idx) return;
-  const mat = PIECES[idx];
-  const cs = Math.min(cw, ch) / (mat.length + 1);
-  const ox = (cw - mat[0].length * cs) / 2;
-  const oy = (ch - mat.length * cs) / 2;
-  mat.forEach((row, y) => row.forEach((v, x) => {
-    if (!v) return;
-    drawCell(ctx2, x, y, v, cs, ox, oy);
-  }));
+function updateCheck() {
+  // ボードに新たなフルラインがあるか（連鎖）
+  checkAndStartFlash();
 }
 
 // ─────────────────────────────────────────────────────
-//  DRAWING
+//  DRAW CELL
 // ─────────────────────────────────────────────────────
 function drawCell(c, x, y, colorIdx, size = CELL, ox = 0, oy = 0) {
-  const px = ox + x * size;
-  const py = oy + y * size;
+  const px    = ox + x * size;
+  const py    = oy + y * size;
   const color = COLORS[colorIdx];
-  const glow = GLOWS[colorIdx];
-  const pad = size * 0.06;
+  const glow  = GLOWS[colorIdx];
+  const pad   = size * 0.06;
 
-  // Outer glow
   c.shadowColor = glow;
-  c.shadowBlur = size * 0.6;
-  c.fillStyle = color;
-  c.fillRect(px + pad, py + pad, size - pad * 2, size - pad * 2);
+  c.shadowBlur  = size * 0.6;
+  c.fillStyle   = color;
+  c.fillRect(px + pad, py + pad, size - pad*2, size - pad*2);
 
-  // Inner highlight
-  c.shadowBlur = 0;
-  c.fillStyle = 'rgba(255,255,255,0.18)';
-  c.fillRect(px + pad, py + pad, size - pad * 2, size * 0.3);
+  c.shadowBlur  = 0;
+  c.fillStyle   = 'rgba(255,255,255,0.18)';
+  c.fillRect(px + pad, py + pad, size - pad*2, size * 0.3);
 
-  // Border
   c.strokeStyle = 'rgba(255,255,255,0.25)';
-  c.lineWidth = 0.5;
-  c.strokeRect(px + pad + 0.5, py + pad + 0.5, size - pad * 2 - 1, size - pad * 2 - 1);
+  c.lineWidth   = 0.5;
+  c.strokeRect(px + pad + 0.5, py + pad + 0.5, size - pad*2 - 1, size - pad*2 - 1);
 }
 
+// ─────────────────────────────────────────────────────
+//  DRAW BOARD
+// ─────────────────────────────────────────────────────
 function drawGhost() {
-  if (!current) return;
+  if (!current || phase !== PHASE.PLAY) return;
   let gy = current.y;
   while (!collision({ ...current, y: gy + 1 }, board)) gy++;
-  const saved = current.y;
-  current.y = gy;
   ctx.globalAlpha = 0.18;
   current.matrix.forEach((row, y) => row.forEach((v, x) => {
     if (!v) return;
-    const px = (current.x + x) * CELL;
-    const py = (current.y + y) * CELL;
     ctx.fillStyle = COLORS[v];
-    ctx.fillRect(px + 2, py + 2, CELL - 4, CELL - 4);
+    ctx.fillRect((current.x+x)*CELL+2, (gy+y)*CELL+2, CELL-4, CELL-4);
   }));
   ctx.globalAlpha = 1;
-  current.y = saved;
 }
 
 function drawBoard() {
-  // Background grid
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Grid lines
   ctx.strokeStyle = 'rgba(0,229,255,0.04)';
-  ctx.lineWidth = 0.5;
+  ctx.lineWidth   = 0.5;
   for (let x = 0; x <= COLS; x++) {
-    ctx.beginPath(); ctx.moveTo(x * CELL, 0); ctx.lineTo(x * CELL, CANVAS_H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x*CELL, 0); ctx.lineTo(x*CELL, CANVAS_H); ctx.stroke();
   }
   for (let y = 0; y <= ROWS; y++) {
-    ctx.beginPath(); ctx.moveTo(0, y * CELL); ctx.lineTo(CANVAS_W, y * CELL); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, y*CELL); ctx.lineTo(CANVAS_W, y*CELL); ctx.stroke();
   }
 
-  // Placed cells
+  // ── FLASH PHASE ──────────────────────────────────
+  if (phase === PHASE.LINE_FLASH) {
+    const flashSet = new Set(flashingRows);
+    board.forEach((row, y) => row.forEach((v, x) => {
+      if (!v) return;
+      if (flashSet.has(y)) {
+        if (flashOn) {
+          ctx.shadowColor = '#ffffff';
+          ctx.shadowBlur  = CELL * 0.8;
+          ctx.fillStyle   = '#ffffff';
+          const pad = CELL * 0.06;
+          ctx.fillRect(x*CELL+pad, y*CELL+pad, CELL-pad*2, CELL-pad*2);
+          ctx.shadowBlur = 0;
+        } else {
+          drawCell(ctx, x, y, v);
+        }
+      } else {
+        drawCell(ctx, x, y, v);
+      }
+    }));
+    updateParticles(); drawParticles();
+    return;
+  }
+
+  // ── DROP ANIM PHASE ───────────────────────────────
+  if (phase === PHASE.DROP_ANIM) {
+    // アニメ中セルの「到着先(toY)」をキーにしたセット
+    const animToSet = new Set(animCells.map(c => `${c.x},${c.toY}`));
+
+    // 静止セル（落下しないもの）を描画
+    board.forEach((row, y) => row.forEach((v, x) => {
+      if (!v) return;
+      // このセルがアニメ中セルの到着先なら、アニメ側で描くのでスキップ
+      if (animToSet.has(`${x},${y}`)) return;
+      drawCell(ctx, x, y, v);
+    }));
+
+    // アニメ中セルを浮動小数点Yで描画
+    for (const cell of animCells) {
+      const px    = cell.x * CELL;
+      const py    = cell.curY * CELL;
+      const pad   = CELL * 0.06;
+      const color = COLORS[cell.colorIdx];
+      const glow  = GLOWS[cell.colorIdx];
+
+      ctx.shadowColor = glow;
+      ctx.shadowBlur  = CELL * 0.6;
+      ctx.fillStyle   = color;
+      ctx.fillRect(px+pad, py+pad, CELL-pad*2, CELL-pad*2);
+
+      ctx.shadowBlur  = 0;
+      ctx.fillStyle   = 'rgba(255,255,255,0.18)';
+      ctx.fillRect(px+pad, py+pad, CELL-pad*2, CELL*0.3);
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth   = 0.5;
+      ctx.strokeRect(px+pad+0.5, py+pad+0.5, CELL-pad*2-1, CELL-pad*2-1);
+    }
+
+    updateParticles(); drawParticles();
+    return;
+  }
+
+  // ── PLAY / CHECK PHASE ────────────────────────────
   board.forEach((row, y) => row.forEach((v, x) => {
     if (v) drawCell(ctx, x, y, v);
   }));
-
-  // Ghost
   drawGhost();
-
-  // Current piece
   if (current) {
     current.matrix.forEach((row, y) => row.forEach((v, x) => {
-      if (v) drawCell(ctx, current.x + x, current.y + y, v);
+      if (v) drawCell(ctx, current.x+x, current.y+y, v);
     }));
   }
-
-  // Particles
-  updateParticles();
-  drawParticles();
+  updateParticles(); drawParticles();
 }
 
 // ─────────────────────────────────────────────────────
-//  FLASH EFFECT
+//  MINI CANVAS (NEXT / HOLD)
 // ─────────────────────────────────────────────────────
-function doFlash(lines) {
-  const colors = ['rgba(0,229,255,0.35)', 'rgba(255,224,0,0.45)', 'rgba(255,45,120,0.5)', 'rgba(191,95,255,0.6)'];
-  flashEl.style.background = colors[Math.min(lines - 1, 3)];
-  flashEl.style.opacity = '1';
-  flashEl.style.transition = 'none';
+function drawMini(ctx2, idx) {
+  const cw = ctx2.canvas.width, ch = ctx2.canvas.height;
+  ctx2.clearRect(0, 0, cw, ch);
+  if (!idx) return;
+  const mat = PIECES[idx];
+  const cs  = Math.min(cw, ch) / (mat.length + 1);
+  const ox  = (cw - mat[0].length * cs) / 2;
+  const oy  = (ch - mat.length    * cs) / 2;
+  mat.forEach((row, y) => row.forEach((v, x) => { if (v) drawCell(ctx2, x, y, v, cs, ox, oy); }));
+}
+
+// ─────────────────────────────────────────────────────
+//  FLASH EFFECT (board overlay)
+// ─────────────────────────────────────────────────────
+function doFlash(clearedCount) {
+  const colors = [
+    'rgba(0,229,255,0.35)',
+    'rgba(255,224,0,0.45)',
+    'rgba(255,45,120,0.5)',
+    'rgba(191,95,255,0.6)',
+  ];
+  flashEl.style.background  = colors[Math.min(clearedCount - 1, 3)];
+  flashEl.style.opacity     = '1';
+  flashEl.style.transition  = 'none';
   clearTimeout(flashTimeout);
   flashTimeout = setTimeout(() => {
     flashEl.style.transition = 'opacity 0.3s ease';
-    flashEl.style.opacity = '0';
+    flashEl.style.opacity    = '0';
   }, 80);
 }
 
@@ -529,17 +633,25 @@ function showPop(msg) {
 }
 
 // ─────────────────────────────────────────────────────
+//  SPAWN NEXT
+// ─────────────────────────────────────────────────────
+function spawnNext() {
+  if (nextIdx === undefined) nextIdx = randomPieceIdx();
+  current  = makePiece(nextIdx);
+  nextIdx  = randomPieceIdx();
+  drawMini(nextCtx, nextIdx);
+  if (collision(current, board)) { triggerGameOver(); }
+}
+
+// ─────────────────────────────────────────────────────
 //  GAME OVER
 // ─────────────────────────────────────────────────────
 function triggerGameOver() {
-  gameOver = true;
-  isRunning = false;
+  gameOver = true; isRunning = false;
   cancelAnimationFrame(rafId);
-
   document.getElementById('finalScore').textContent = score.toLocaleString();
-
   const ranking = getRanking();
-  const rank = ranking.findIndex(r => score > r.score);
+  const rank    = ranking.findIndex(r => score > r.score);
   let msg = '';
   if (ranking.length < 5 || rank !== -1) {
     const pos = rank === -1 ? ranking.length + 1 : rank + 1;
@@ -550,23 +662,19 @@ function triggerGameOver() {
     msg = 'TOP5に届かず…再挑戦！';
   }
   document.getElementById('rankMessage').textContent = msg;
-
   showScreen(gameoverScreen);
 }
 
 // ─────────────────────────────────────────────────────
-//  RANKING (localStorage)
+//  RANKING
 // ─────────────────────────────────────────────────────
 function getRanking() {
-  try { return JSON.parse(localStorage.getItem('neonTetrisRanking') || '[]'); }
-  catch { return []; }
+  try { return JSON.parse(localStorage.getItem('neonTetrisRanking') || '[]'); } catch { return []; }
 }
-function saveRanking(data) {
-  localStorage.setItem('neonTetrisRanking', JSON.stringify(data));
-}
+function saveRanking(data) { localStorage.setItem('neonTetrisRanking', JSON.stringify(data)); }
 
 function saveScore() {
-  const name = (document.getElementById('playerName').value.trim() || 'PLAYER').toUpperCase();
+  const name    = (document.getElementById('playerName').value.trim() || 'PLAYER').toUpperCase();
   const ranking = getRanking();
   ranking.push({ name, score });
   ranking.sort((a, b) => b.score - a.score);
@@ -576,15 +684,12 @@ function saveScore() {
   showRankingList(trimmed);
 }
 
-function showRanking() {
-  showRankingList(getRanking());
-  showScreen(rankingScreen);
-}
+function showRanking() { showRankingList(getRanking()); showScreen(rankingScreen); }
 
 function showRankingList(data) {
   const list = document.getElementById('rankingList');
   list.innerHTML = '';
-  if (data.length === 0) {
+  if (!data.length) {
     list.innerHTML = '<li style="color:var(--text-dim);font-family:var(--font-head);font-size:.8rem;letter-spacing:.1em;justify-content:center">NO DATA YET</li>';
     return;
   }
@@ -592,7 +697,7 @@ function showRankingList(data) {
   data.slice(0, 5).forEach((entry, i) => {
     const li = document.createElement('li');
     li.innerHTML = `
-      <span class="rank-num ${medals[i]}">${i + 1}</span>
+      <span class="rank-num ${medals[i]}">${i+1}</span>
       <span class="rank-name">${entry.name}</span>
       <span class="rank-score">${entry.score.toLocaleString()}</span>`;
     list.appendChild(li);
@@ -607,7 +712,7 @@ function togglePause() {
   isPaused = !isPaused;
   if (isPaused) {
     showScreen(pauseScreen);
-    gameScreen.classList.add('active'); // keep game visible behind
+    gameScreen.classList.add('active');
     overlay.classList.remove('hidden');
     overlayText.textContent = 'PAUSED';
   } else {
@@ -625,12 +730,27 @@ function loop(timestamp) {
   if (isPaused || gameOver) return;
   const dt = timestamp - lastTime;
   lastTime = timestamp;
-  dropCounter += dt;
-  if (dropCounter >= dropInterval) {
-    dropCounter = 0;
-    if (!collision(current, board, 0, 1)) current.y++;
-    else lock();
+
+  switch (phase) {
+    case PHASE.PLAY:
+      dropCounter += dt;
+      if (dropCounter >= dropInterval) {
+        dropCounter = 0;
+        if (current && !collision(current, board, 0, 1)) current.y++;
+        else if (current) lock();
+      }
+      break;
+    case PHASE.LINE_FLASH:
+      updateFlash(dt);
+      break;
+    case PHASE.DROP_ANIM:
+      updateDropAnim(dt);
+      break;
+    case PHASE.CHECK:
+      updateCheck();
+      break;
   }
+
   drawBoard();
   rafId = requestAnimationFrame(loop);
 }
@@ -641,74 +761,67 @@ function loop(timestamp) {
 function startGame() {
   cancelAnimationFrame(rafId);
 
-  // Init state
-  board = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
-  score = 0; level = 1; lines = 0; combo = 0;
+  board        = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+  score        = 0; level = 1; lines = 0; combo = 0;
   dropInterval = SPEEDS[0]; dropCounter = 0;
-  isRunning = true; isPaused = false; gameOver = false;
-  hold = null; canHold = true;
-  nextIdx = undefined;
-  particles = [];
+  isRunning    = true; isPaused = false; gameOver = false;
+  hold         = null; canHold = true; nextIdx = undefined;
+  particles    = []; animCells = [];
+  phase        = PHASE.PLAY; phaseTimer = 0;
+  flashingRows = []; animProgress = 0;
 
-  // Canvas setup
-  gameCanvas.width = CANVAS_W;
+  gameCanvas.width  = CANVAS_W;
   gameCanvas.height = CANVAS_H;
 
-  updateHUD();
-  updateSpeedBar();
+  updateHUD(); updateSpeedBar();
   comboEl.textContent = 0;
   overlay.classList.add('hidden');
-
-  // Clear mini canvases
   nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
   holdCtx.clearRect(0, 0, holdCanvas.width, holdCanvas.height);
 
   spawnNext();
   showScreen(gameScreen);
-
   lastTime = performance.now();
   rafId = requestAnimationFrame(loop);
 }
 
 // ─────────────────────────────────────────────────────
-//  KEYBOARD INPUT
+//  KEYBOARD
 // ─────────────────────────────────────────────────────
 const keys = {};
 document.addEventListener('keydown', e => {
   if (keys[e.code]) return;
   keys[e.code] = true;
   switch (e.code) {
-    case 'ArrowLeft':  e.preventDefault(); move(-1); break;
-    case 'ArrowRight': e.preventDefault(); move(1); break;
-    case 'ArrowDown':  e.preventDefault(); softDrop(); break;
-    case 'ArrowUp':    e.preventDefault(); rotate(1); break;
-    case 'KeyZ':       rotate(-1); break;
-    case 'Space':      e.preventDefault(); hardDrop(); break;
-    case 'KeyC':       holdPiece(); break;
-    case 'Escape':     togglePause(); break;
+    case 'ArrowLeft':  e.preventDefault(); move(-1);    break;
+    case 'ArrowRight': e.preventDefault(); move(1);     break;
+    case 'ArrowDown':  e.preventDefault(); softDrop();  break;
+    case 'ArrowUp':    e.preventDefault(); rotate(1);   break;
+    case 'KeyZ':       rotate(-1);                      break;
+    case 'Space':      e.preventDefault(); hardDrop();  break;
+    case 'KeyC':       holdPiece();                     break;
+    case 'Escape':     togglePause();                   break;
   }
 });
 document.addEventListener('keyup', e => { keys[e.code] = false; });
 
 // ─────────────────────────────────────────────────────
-//  TOUCH SWIPE / TAP CONTROLS
+//  TOUCH
 // ─────────────────────────────────────────────────────
-let touchStart = null;
-let touchLastX = null;
-let touchMoveAccum = 0;
+let touchStart = null, touchLastX = null, touchMoveAccum = 0;
 
 gameCanvas.addEventListener('touchstart', e => {
   e.preventDefault();
   const t = e.touches[0];
-  touchStart = { x: t.clientX, y: t.clientY, time: Date.now() };
-  touchLastX = t.clientX;
-  touchMoveAccum = 0;
+  touchStart      = { x: t.clientX, y: t.clientY, time: Date.now() };
+  touchLastX      = t.clientX;
+  touchMoveAccum  = 0;
 }, { passive: false });
 
 gameCanvas.addEventListener('touchmove', e => {
   e.preventDefault();
   if (!touchStart || isPaused || gameOver) return;
-  const t = e.touches[0];
+  const t  = e.touches[0];
   const dx = t.clientX - touchLastX;
   touchMoveAccum += dx;
   if (Math.abs(touchMoveAccum) > CELL) {
@@ -724,9 +837,8 @@ gameCanvas.addEventListener('touchend', e => {
   const dt = Date.now() - touchStart.time;
   const dx = e.changedTouches[0].clientX - touchStart.x;
   const dy = e.changedTouches[0].clientY - touchStart.y;
-
-  if (Math.abs(dy) > 60 && dy > 0) { hardDrop(); }
-  else if (Math.abs(dx) < 15 && Math.abs(dy) < 15 && dt < 250) { rotate(1); }
+  if (Math.abs(dy) > 60 && dy > 0) hardDrop();
+  else if (Math.abs(dx) < 15 && Math.abs(dy) < 15 && dt < 250) rotate(1);
   touchStart = null;
 }, { passive: false });
 

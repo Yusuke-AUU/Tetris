@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <style>
+      @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.1} }
+      .fl { animation: blink 0.6s ease-in-out infinite; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="32" height="32" rx="6" fill="#040812"/>
+
+  <!-- Row 1 top: cyan I-piece (2 blocks) -->
+  <rect x="2"  y="2" width="8" height="8" rx="1.5" fill="#00e5ff"/>
+  <rect x="12" y="2" width="8" height="8" rx="1.5" fill="#00e5ff"/>
+  <!-- highlight -->
+  <rect x="3"  y="3" width="4" height="2" rx="0.5" fill="rgba(255,255,255,0.3)"/>
+  <rect x="13" y="3" width="4" height="2" rx="0.5" fill="rgba(255,255,255,0.3)"/>
+
+  <!-- Row 2: purple T-piece -->
+  <rect x="2"  y="12" width="8" height="8" rx="1.5" fill="#bf5fff"/>
+  <rect x="12" y="12" width="8" height="8" rx="1.5" fill="#bf5fff"/>
+  <rect x="22" y="12" width="8" height="8" rx="1.5" fill="#bf5fff"/>
+  <rect x="3"  y="13" width="4" height="2" rx="0.5" fill="rgba(255,255,255,0.25)"/>
+  <rect x="13" y="13" width="4" height="2" rx="0.5" fill="rgba(255,255,255,0.25)"/>
+  <rect x="23" y="13" width="4" height="2" rx="0.5" fill="rgba(255,255,255,0.25)"/>
+
+  <!-- Row 3: FULL LINE white flash -->
+  <rect class="fl" x="2"  y="22" width="8" height="8" rx="1.5" fill="#ffffff"/>
+  <rect class="fl" x="12" y="22" width="8" height="8" rx="1.5" fill="#ffffff"/>
+  <rect class="fl" x="22" y="22" width="8" height="8" rx="1.5" fill="#ffffff"/>
+</svg>

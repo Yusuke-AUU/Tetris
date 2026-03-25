@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:1200px; height:630px; overflow:hidden; background:#040812; }
+
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@400;600&display=swap');
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+  @keyframes blink2 { 0%,100%{opacity:0.15} 50%{opacity:1} }
+
+  .flash { animation: blink 0.55s ease-in-out infinite; }
+  .flash2 { animation: blink2 0.55s ease-in-out infinite; }
+
+  body {
+    font-family: 'Orbitron', monospace;
+    display: flex;
+    align-items: stretch;
+  }
+
+  /* grid bg */
+  .grid-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.06) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Left: board */
+  .board-side {
+    position: relative;
+    width: 400px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+  }
+
+  .board {
+    display: grid;
+    grid-template-columns: repeat(5, 60px);
+    grid-template-rows: repeat(5, 60px);
+    gap: 6px;
+  }
+
+  .cell {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+  .cell::after {
+    content: '';
+    position: absolute;
+    top: 5px; left: 5px;
+    width: 28px; height: 10px;
+    background: rgba(255,255,255,0.22);
+    border-radius: 3px;
+  }
+  .cell.empty { background: rgba(0,229,255,0.04); border: 1px solid rgba(0,229,255,0.1); }
+  .cell.cyan  { background: #00e5ff; box-shadow: 0 0 14px rgba(0,229,255,0.6); }
+  .cell.pink  { background: #ff2d78; box-shadow: 0 0 14px rgba(255,45,120,0.6); }
+  .cell.purple{ background: #bf5fff; box-shadow: 0 0 14px rgba(191,95,255,0.6); }
+  .cell.green { background: #00ff99; box-shadow: 0 0 14px rgba(0,255,153,0.6); }
+  .cell.orange{ background: #ff8800; box-shadow: 0 0 14px rgba(255,136,0,0.6); }
+  .cell.white { background: #ffffff; box-shadow: 0 0 20px rgba(255,255,255,0.9); }
+
+  /* Divider */
+  .divider {
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, rgba(0,229,255,0.4) 20%, rgba(0,229,255,0.4) 80%, transparent);
+    flex-shrink: 0;
+  }
+
+  /* Right: info */
+  .info-side {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 60px 70px;
+    position: relative;
+    gap: 20px;
+  }
+
+  .logo-title {
+    font-size: 72px;
+    font-weight: 900;
+    line-height: 1;
+    color: #00e5ff;
+    text-shadow: 0 0 20px rgba(0,229,255,0.6), 0 0 60px rgba(0,229,255,0.3);
+    letter-spacing: 0.05em;
+  }
+  .logo-sub {
+    font-size: 72px;
+    font-weight: 900;
+    line-height: 1;
+    color: #ffffff;
+    letter-spacing: 0.05em;
+  }
+
+  .tagline {
+    font-family: 'Orbitron', monospace;
+    font-size: 18px;
+    letter-spacing: 0.4em;
+    color: #ff2d78;
+    text-shadow: 0 0 8px rgba(255,45,120,0.5);
+    margin-top: 4px;
+  }
+
+  .sep {
+    width: 120px;
+    height: 2px;
+    background: linear-gradient(90deg, #00e5ff, transparent);
+    border-radius: 99px;
+  }
+
+  .stats {
+    display: flex;
+    gap: 40px;
+    margin-top: 8px;
+  }
+  .stat-label {
+    font-size: 13px;
+    letter-spacing: 0.2em;
+    color: rgba(200,232,248,0.5);
+    margin-bottom: 4px;
+  }
+  .stat-val {
+    font-size: 28px;
+    font-weight: 700;
+  }
+  .stat-val.gold  { color: #ffe000; text-shadow: 0 0 10px rgba(255,224,0,0.5); }
+  .stat-val.green { color: #00ff99; text-shadow: 0 0 10px rgba(0,255,153,0.5); }
+
+  .block-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .mini-block {
+    width: 26px;
+    height: 26px;
+    border-radius: 4px;
+  }
+
+  /* Chain badge */
+  .chain-badge {
+    position: absolute;
+    top: 60px; right: 60px;
+    background: rgba(255,224,0,0.15);
+    border: 1px solid rgba(255,224,0,0.5);
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-size: 14px;
+    letter-spacing: 0.2em;
+    color: #ffe000;
+  }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+
+<!-- Board side -->
+<div class="board-side">
+  <div class="board">
+    <!-- Row 1: cyan I-piece -->
+    <div class="cell cyan"></div>
+    <div class="cell cyan"></div>
+    <div class="cell cyan"></div>
+    <div class="cell cyan"></div>
+    <div class="cell empty"></div>
+
+    <!-- Row 2: orange L -->
+    <div class="cell orange"></div>
+    <div class="cell empty"></div>
+    <div class="cell empty"></div>
+    <div class="cell empty"></div>
+    <div class="cell empty"></div>
+
+    <!-- Row 3: purple T -->
+    <div class="cell orange"></div>
+    <div class="cell purple"></div>
+    <div class="cell purple"></div>
+    <div class="cell purple"></div>
+    <div class="cell empty"></div>
+
+    <!-- Row 4: pink + green -->
+    <div class="cell pink"></div>
+    <div class="cell pink"></div>
+    <div class="cell green"></div>
+    <div class="cell green"></div>
+    <div class="cell green"></div>
+
+    <!-- Row 5: FULL LINE (white flash) -->
+    <div class="cell white flash"></div>
+    <div class="cell white flash"></div>
+    <div class="cell white flash"></div>
+    <div class="cell white flash"></div>
+    <div class="cell white flash"></div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- Info side -->
+<div class="info-side">
+  <div class="chain-badge flash2">⬇ CHAIN!</div>
+
+  <div>
+    <div class="logo-title">NEON</div>
+    <div class="logo-sub">TETRIS</div>
+  </div>
+
+  <div class="tagline">連鎖を解き放て</div>
+
+  <div class="sep"></div>
+
+  <div class="stats">
+    <div>
+      <div class="stat-label">SCORE</div>
+      <div class="stat-val gold">128,400</div>
+    </div>
+    <div>
+      <div class="stat-label">COMBO</div>
+      <div class="stat-val green">×5</div>
+    </div>
+    <div>
+      <div class="stat-label">LEVEL</div>
+      <div class="stat-val" style="color:#00e5ff;text-shadow:0 0 10px rgba(0,229,255,0.5)">7</div>
+    </div>
+  </div>
+
+  <div class="block-row">
+    <div class="mini-block" style="background:#00e5ff;box-shadow:0 0 8px rgba(0,229,255,0.6)"></div>
+    <div class="mini-block" style="background:#ff2d78;box-shadow:0 0 8px rgba(255,45,120,0.6)"></div>
+    <div class="mini-block" style="background:#ffe000;box-shadow:0 0 8px rgba(255,224,0,0.6)"></div>
+    <div class="mini-block" style="background:#bf5fff;box-shadow:0 0 8px rgba(191,95,255,0.6)"></div>
+    <div class="mini-block" style="background:#00ff99;box-shadow:0 0 8px rgba(0,255,153,0.6)"></div>
+    <div class="mini-block" style="background:#ff8800;box-shadow:0 0 8px rgba(255,136,0,0.6)"></div>
+    <div class="mini-block" style="background:#4488ff;box-shadow:0 0 8px rgba(68,136,255,0.6)"></div>
+  </div>
+</div>
+
+</body>
+</html>

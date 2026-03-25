@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>NEON TETRIS</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- Particle canvas -->
+  <canvas id="bgCanvas"></canvas>
+
+  <!-- Screens -->
+  <div id="startScreen" class="screen active">
+    <div class="screen-inner">
+      <div class="logo-wrap">
+        <div class="logo-glow"></div>
+        <h1 class="logo">NEON<br><span>TETRIS</span></h1>
+      </div>
+      <p class="tagline">連鎖を解き放て</p>
+      <button class="btn-neon" id="startBtn">PLAY</button>
+      <button class="btn-neon btn-ghost" id="rankingBtnStart">ランキング</button>
+    </div>
+  </div>
+
+  <div id="gameScreen" class="screen">
+    <div class="game-layout">
+
+      <!-- Left panel -->
+      <div class="side-panel left-panel">
+        <div class="panel-card">
+          <div class="label">SCORE</div>
+          <div class="value" id="score">0</div>
+        </div>
+        <div class="panel-card">
+          <div class="label">LEVEL</div>
+          <div class="value" id="level">1</div>
+        </div>
+        <div class="panel-card">
+          <div class="label">LINES</div>
+          <div class="value" id="lines">0</div>
+        </div>
+        <div class="panel-card">
+          <div class="label">COMBO</div>
+          <div class="value combo-val" id="combo">0</div>
+        </div>
+        <button class="btn-neon btn-sm" id="pauseBtn">PAUSE</button>
+      </div>
+
+      <!-- Game board -->
+      <div class="board-wrap">
+        <canvas id="gameCanvas"></canvas>
+        <div id="overlay" class="board-overlay hidden">
+          <div class="overlay-text" id="overlayText"></div>
+        </div>
+        <!-- flash effect -->
+        <div id="flashEl" class="board-flash"></div>
+      </div>
+
+      <!-- Right panel -->
+      <div class="side-panel right-panel">
+        <div class="panel-card">
+          <div class="label">NEXT</div>
+          <canvas id="nextCanvas" width="100" height="100"></canvas>
+        </div>
+        <div class="panel-card">
+          <div class="label">HOLD</div>
+          <canvas id="holdCanvas" width="100" height="100"></canvas>
+        </div>
+        <div class="panel-card speed-card">
+          <div class="label">SPEED</div>
+          <div class="speed-bar-wrap">
+            <div class="speed-bar" id="speedBar"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile controls -->
+    <div class="mobile-controls">
+      <div class="mobile-row top-row">
+        <button class="ctrl-btn" id="holdBtn">HOLD</button>
+        <button class="ctrl-btn wide-btn" id="rotateBtn">⟳</button>
+        <button class="ctrl-btn" id="dropBtn">↓↓</button>
+      </div>
+      <div class="mobile-row bottom-row">
+        <button class="ctrl-btn large-btn" id="leftBtn">◀</button>
+        <button class="ctrl-btn large-btn" id="downBtn">▼</button>
+        <button class="ctrl-btn large-btn" id="rightBtn">▶</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pause screen -->
+  <div id="pauseScreen" class="screen">
+    <div class="screen-inner">
+      <h2 class="pause-title">PAUSED</h2>
+      <button class="btn-neon" id="resumeBtn">RESUME</button>
+      <button class="btn-neon btn-ghost" id="quitBtn">QUIT</button>
+    </div>
+  </div>
+
+  <!-- Game over screen -->
+  <div id="gameoverScreen" class="screen">
+    <div class="screen-inner">
+      <h2 class="gameover-title">GAME<br>OVER</h2>
+      <div class="final-score-wrap">
+        <div class="label">FINAL SCORE</div>
+        <div class="final-score" id="finalScore">0</div>
+      </div>
+      <div id="rankMessage" class="rank-message"></div>
+      <div class="name-input-wrap" id="nameWrap">
+        <div class="label">NAME</div>
+        <input type="text" id="playerName" maxlength="8" placeholder="YOUR NAME" autocomplete="off" />
+        <button class="btn-neon" id="saveScoreBtn">SAVE</button>
+      </div>
+      <button class="btn-neon btn-ghost" id="retryBtn">RETRY</button>
+    </div>
+  </div>
+
+  <!-- Ranking screen -->
+  <div id="rankingScreen" class="screen">
+    <div class="screen-inner">
+      <h2 class="ranking-title">RANKING</h2>
+      <ol class="ranking-list" id="rankingList"></ol>
+      <button class="btn-neon" id="backBtn">BACK</button>
+    </div>
+  </div>
+
+  <!-- Combo / line clear pop text -->
+  <div id="popText" class="pop-text"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>

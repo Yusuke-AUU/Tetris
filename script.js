@@ -382,25 +382,46 @@ function commitLinesClear() {
   if (msg) showPop(msg);
 
   // ── アニメデータ構築 ──────────────────────────────
-  // 消去後のボードを計算
+  // ①消去行を除いたボードを作る
   const flashSet = new Set(flashingRows);
   const newBoard  = board.filter((_, i) => !flashSet.has(i));
   while (newBoard.length < ROWS) newBoard.unshift(new Array(COLS).fill(0));
 
-  // 各セルの落下量 = そのセルより下にある消去行の数
-  animCells = [];
-  for (let y = 0; y < ROWS; y++) {
-    if (flashSet.has(y)) continue;
-    for (let x = 0; x < COLS; x++) {
-      const colorIdx = board[y][x];
-      if (!colorIdx) continue;
-      const fallenBy = [...flashingRows].filter(r => r > y).length;
-      if (fallenBy === 0) continue;   // 落下しないセルはアニメ不要
-      animCells.push({ x, colorIdx, fromY: y, toY: y + fallenBy, curY: y });
+  // ②列重力を適用したボード（アニメ後の最終状態）を計算
+  const gravBoard = newBoard.map(r => [...r]);
+  for (let x = 0; x < COLS; x++) {
+    let writeY = ROWS - 1;
+    for (let y = ROWS - 1; y >= 0; y--) {
+      if (gravBoard[y][x] !== 0) {
+        gravBoard[writeY][x] = gravBoard[y][x];
+        if (writeY !== y) gravBoard[y][x] = 0;
+        writeY--;
+      }
     }
+    for (let y = writeY; y >= 0; y--) gravBoard[y][x] = 0;
   }
 
-  board = newBoard;
+  // ③各セルの「消去前Y」→「重力適用後Y」をアニメに登録
+  animCells = [];
+  for (let x = 0; x < COLS; x++) {
+    const srcCells = [];
+    for (let y = 0; y < ROWS; y++) {
+      if (!flashSet.has(y) && board[y][x] !== 0)
+        srcCells.push({ y, colorIdx: board[y][x] });
+    }
+    const dstCells = [];
+    for (let y = 0; y < ROWS; y++) {
+      if (gravBoard[y][x] !== 0) dstCells.push(y);
+    }
+    srcCells.forEach((src, i) => {
+      const toY = dstCells[i] ?? src.y;
+      if (toY === src.y) return;
+      animCells.push({ x, colorIdx: src.colorIdx, fromY: src.y, toY, curY: src.y });
+    });
+  }
+
+  // ④ボードを重力適用済みの最終状態にセット
+  board = gravBoard;
 
   phase         = PHASE.DROP_ANIM;
   phaseTimer    = 0;
@@ -430,8 +451,28 @@ function updateDropAnim(dt) {
 
   if (animProgress >= 1) {
     animCells = [];
+    // ★ 落下アニメ完了後に列重力を適用（連鎖の核心）
+    applyGravity();
     phase     = PHASE.CHECK;
     phaseTimer = 0;
+  }
+}
+
+// ─────────────────────────────────────────────────────
+//  GRAVITY（列ごとに空白を埋める重力）
+//  ラインが消えた後、浮いているブロックを下に落とす
+// ─────────────────────────────────────────────────────
+function applyGravity() {
+  for (let x = 0; x < COLS; x++) {
+    let writeY = ROWS - 1;
+    for (let y = ROWS - 1; y >= 0; y--) {
+      if (board[y][x] !== 0) {
+        board[writeY][x] = board[y][x];
+        if (writeY !== y) board[y][x] = 0;
+        writeY--;
+      }
+    }
+    for (let y = writeY; y >= 0; y--) board[y][x] = 0;
   }
 }
 
